@@ -12,6 +12,9 @@ results/
 resultados*/
 resultados_lote/
 
+# Your own bitcoin quotes stay on your machine (the examples keep theirs)
+/cotizaciones.csv
+
 # OS and editors
 .DS_Store
 .vscode/

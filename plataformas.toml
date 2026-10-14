@@ -1,0 +1,70 @@
+# Costos de comprar y vender bitcoin con pesos, por plataforma (btc_macd.py).
+#
+# comision_compra, comision_venta : % que cobra la plataforma en cada operación.
+# spread : % entre el precio al que compras y el precio al que vendes, medido
+#          contra el precio medio del mercado. Puede ser:
+#            un número       -> fijo, en %
+#            "libro"         -> se lee en vivo del libro de órdenes por API (api = "bitso" o "binance")
+#            "por_medir"     -> lo mides tú con  python btc_macd.py cotiza --manual "Nombre" COMPRA VENTA
+#                               y se usa el promedio de lo anotado en cotizaciones.csv
+# spread_tipico : % que se usa para "libro" cuando no hay conexión.
+# omitir_sin_medicion : true para dejar fuera la plataforma mientras su spread no esté medido.
+#
+# Cada dato lleva de dónde salió y cuándo se consultó. Las comisiones cambian:
+# revisa la fuente antes de decidir con estos números.
+
+[referencia]
+# Libro cuyo precio medio, (compra + venta) / 2, sirve de referencia para medir
+# el spread de las apps que no tienen API.
+api = "bitso"
+
+[[plataforma]]
+nombre = "Mercado Pago"
+comision_compra = 1.5
+comision_venta = 1.5
+spread = "por_medir"
+fuente = "Comisión: Luis, en la app de Mercado Pago (octubre de 2026). Spread: por medir en la app."
+nota = "No tiene API pública: el spread sale de las cotizaciones que anotes."
+
+[[plataforma]]
+nombre = "Bitso, orden de mercado"
+comision_compra = 0.78
+comision_venta = 0.78
+spread = "libro"
+api = "bitso"
+spread_tipico = 0.05
+fuente = "bitso.com/mx/fees, comisión taker con menos de 20,000 MXN al mes (consultada el 2026-10-14). Spread: libro BTC/MXN por API."
+
+[[plataforma]]
+nombre = "Bitso, orden límite"
+comision_compra = 0.60
+comision_venta = 0.60
+spread = 0
+fuente = "bitso.com/mx/fees, comisión maker con menos de 20,000 MXN al mes (consultada el 2026-10-14)."
+nota = "Pones tú el precio y esperas a que alguien lo tome: no cruzas el spread, pero la orden puede tardar o no llenarse."
+
+[[plataforma]]
+nombre = "Binance, orden de mercado"
+comision_compra = 0.10
+comision_venta = 0.10
+spread = "libro"
+api = "binance"
+spread_tipico = 0.10
+fuente = "Comisión spot estándar de 0.1% (criptoinforme.com, 5 de octubre de 2026; finantres.mx, 14 de octubre de 2026). Spread: libro BTC/MXN por API."
+nota = "Los depósitos y retiros de pesos pasan por un proveedor externo y su costo no está verificado aquí."
+
+[[plataforma]]
+nombre = "Binance P2P"
+comision_compra = 0
+comision_venta = 0
+spread = "por_medir"
+omitir_sin_medicion = true
+fuente = "Sin comisión para quien compra; el costo va dentro del precio de cada anuncio (criptonoticias.com, junio de 2026)."
+
+# Desactivado: costo de referencia para comparar, muy por encima del resto.
+# [[plataforma]]
+# nombre = "Cajero bitcoin"
+# comision_compra = 10
+# comision_venta = 10
+# spread = 0
+# fuente = "Entre 8% y 15% más 50 MXN según el operador (criptonoticias.com, junio de 2026)."

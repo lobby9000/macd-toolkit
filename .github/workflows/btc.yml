@@ -1,0 +1,66 @@
+name: btc example
+
+# Runs btc_macd.py with today's data (Bitso and Binance order books, Bitso
+# daily candles) and saves the report, charts and CSV files under
+# examples/btc-<date>/. Start it by hand from the Actions tab.
+
+on:
+  workflow_dispatch:
+    inputs:
+      semanal:
+        description: Pesos of the weekly purchase
+        default: "500"
+      desde:
+        description: Start date (YYYY-MM-DD), empty for three years
+        default: ""
+      publicar:
+        description: Commit to main (otherwise to the btc-ejemplo branch)
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: btc-example
+  cancel-in-progress: false
+
+jobs:
+  ejemplo:
+    name: Quotes and analysis with today's data
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Run btc_macd.py
+        env:
+          SEMANAL: ${{ inputs.semanal }}
+          DESDE: ${{ inputs.desde }}
+        run: |
+          fecha=$(TZ=America/Mexico_City date +%F)
+          out="examples/btc-$fecha"
+          mkdir -p "$out"
+          python btc_macd.py cotiza --out "$out" --cotizaciones "$out/cotizaciones.csv"
+          extra=()
+          if [ -n "$DESDE" ]; then extra+=(--desde "$DESDE"); fi
+          python btc_macd.py analiza --semanal "$SEMANAL" "${extra[@]}" --out "$out" \
+            --cotizaciones "$out/cotizaciones.csv"
+          echo "OUT=$out" >> "$GITHUB_ENV"
+          echo "FECHA=$fecha" >> "$GITHUB_ENV"
+      - name: Save the result
+        env:
+          PUBLICAR: ${{ inputs.publicar }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$OUT"
+          git commit -m "Bitcoin example with data from $FECHA"
+          if [ "$PUBLICAR" = "true" ]; then
+            git push origin HEAD:main
+          else
+            git push --force origin HEAD:refs/heads/btc-ejemplo
+          fi
