@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Generated output (example runs live in examples/)
+figuras/
+figures/
+results/
+resultados*/
+resultados_lote/
+
+# OS and editors
+.DS_Store
+.vscode/
+.idea/

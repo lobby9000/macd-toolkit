@@ -1,0 +1,45 @@
+# Mexican Stock Exchange (BMV) tickers for the batch MACD run.
+#
+# One ticker per line in Yahoo Finance format: the BMV symbol with its series
+# and the .MX suffix. Anything after # is a comment, and blank lines are
+# ignored. Comment a line out to skip a ticker without deleting it.
+#
+# Tickers that Yahoo does not recognise do not stop the run. They are listed
+# in fallidos.txt in the output folder, which is the quickest way to debug
+# the list.
+
+AC.MX             # Arca Continental
+ALSEA.MX          # Alsea
+AMXB.MX           # América Móvil, series B
+ASURB.MX          # Grupo Aeroportuario del Sureste
+BBAJIOO.MX        # Banco del Bajío
+BIMBOA.MX         # Grupo Bimbo
+BOLSAA.MX         # Bolsa Mexicana de Valores
+CEMEXCPO.MX       # Cemex CPO
+CHDRAUIB.MX       # Grupo Comercial Chedraui
+FEMSAUBD.MX       # FEMSA UBD
+GAPB.MX           # Grupo Aeroportuario del Pacífico
+GCARSOA1.MX       # Grupo Carso
+GCC.MX            # Grupo Cementos de Chihuahua
+GENTERA.MX        # Gentera
+GFINBURO.MX       # Grupo Financiero Inbursa
+GFNORTEO.MX       # Grupo Financiero Banorte
+GMEXICOB.MX       # Grupo México, series B
+GRUMAB.MX         # Gruma, series B
+KIMBERA.MX        # Kimberly-Clark de México
+KOFUBL.MX         # Coca-Cola FEMSA
+LABB.MX           # Genomma Lab
+LACOMERUBC.MX     # La Comer
+LIVEPOLC-1.MX     # Liverpool
+MEGACPO.MX        # Megacable CPO
+OMAB.MX           # Grupo Aeroportuario Centro Norte
+ORBIA.MX          # Orbia
+PE&OLES.MX        # Peñoles
+PINFRA.MX         # Promotora y Operadora de Infraestructura
+Q.MX              # Quálitas
+RA.MX             # Regional
+SIGMAFA.MX        # Sigma
+TLEVISACPO.MX     # Grupo Televisa CPO
+VESTA.MX          # Corporación Inmobiliaria Vesta
+VOLARA.MX         # Volaris
+WALMEX.MX         # Walmart de México
