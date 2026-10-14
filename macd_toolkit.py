@@ -402,6 +402,13 @@ def load_csv(path: str | Path, date_col: str | None = None, close_col: str | Non
 # 5. Graficas
 # ---------------------------------------------------------------------------
 
+# Con precios de caminata aleatoria, sin ninguna tendencia que encontrar, el
+# MACD(12,26,9) cruza su senal en promedio una vez cada 12 periodos
+# (scripts/random_walk_crossings.py). Una emisora que cruza mas seguido que eso
+# cruza tanto como el puro ruido, y ningun cruce suyo significa gran cosa.
+PERIODOS_RUIDO = 12
+
+
 def resumen_tecnico(df: pd.DataFrame, periodo: str = "periodo") -> dict:
     """
     Condensa el estado del ultimo periodo en un diccionario listo para imprimir.
@@ -447,11 +454,10 @@ def resumen_tecnico(df: pd.DataFrame, periodo: str = "periodo") -> dict:
     n_validos = int(df["hist"].notna().sum())
     if len(cruces) >= 2:
         frec = n_validos / len(cruces)
-        ruido_txt = f"1 cada {frec:.0f} {periodo}s"
-        # Se marca en rojo cuando cruza mas seguido que la propia linea de
-        # senal (9 periodos): si el MACD se voltea antes de que su EMA de 9
-        # alcance a acomodarse, ningun cruce individual llega a significar algo.
-        ruidosa = frec < 10
+        # Un decimal: con el umbral en 12, "1 cada 12" redondeado podria ser
+        # 11.8 (en rojo) o 12.4 (sin marcar) y el color pareceria arbitrario.
+        ruido_txt = f"1 cada {frec:.1f} {periodo}s"
+        ruidosa = frec < PERIODOS_RUIDO
     else:
         frec, ruido_txt, ruidosa = float("nan"), "sin historial", False
 
@@ -494,6 +500,7 @@ def resumen_tecnico(df: pd.DataFrame, periodo: str = "periodo") -> dict:
         "cruce_tipo": t_cruce, "cruce_txt": cruce_txt,
         "cruce_periodos": desde if len(cruces) else None,
         "ruido_txt": ruido_txt, "ruidosa": ruidosa, "cruces_total": len(cruces),
+        "periodos_por_cruce": frec,
         "rsi": rsi, "rsi_txt": rsi_txt,
         "ppo": float(ult["ppo"]) if "ppo" in df.columns and pd.notna(ult.get("ppo")) else None,
         "puntos": puntos, "sesgo": sesgo,

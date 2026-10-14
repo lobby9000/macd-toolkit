@@ -9,7 +9,7 @@ Moving averages, MACD(12, 26, 9) and RSI(14) implemented from first principles i
 ## Highlights
 
 - **Two independent implementations that agree.** The Excel workbook in [`excel/`](excel/plantilla_MACD.xlsx) computes the same indicators with 3,815 linked formulas. A [cross-check script](scripts/excel_crosscheck.py) recalculates it in LibreOffice and matches every quantity to within 5.1 × 10⁻¹³, with the same 9 crossovers flagged on both sides.
-- **Tests that check the mathematics.** 28 unit tests cover properties that can be derived by hand: equality with pandas `ewm(adjust=False)`, a lag of (N − 1)/2 on a linear trend, MACD equal to 7 × slope on a constant trend, the first signal value at t = 34 and the RSI example from class (RS = 3.6 gives 78.26).
+- **Tests that check the mathematics.** 31 unit tests cover properties that can be derived by hand: equality with pandas `ewm(adjust=False)`, a lag of (N − 1)/2 on a linear trend, MACD equal to 7 × slope on a constant trend, the first signal value at t = 34 and the RSI example from class (RS = 3.6 gives 78.26).
 - **Batch runs over a whole market.** `batch_macd.py` analyses the 35 tickers in [`bmv_tickers.txt`](bmv_tickers.txt) in one pass and writes a chart and CSV files per ticker plus a summary table sorted by the most recent crossover. It also detects tickers whose Yahoo Finance feed is missing the latest sessions and retries them.
 
 ## Quick start
@@ -67,9 +67,15 @@ The differences are at the level of the 15 significant digits Excel stores. CI r
 
 The tests of the [MACD signal API](https://github.com/lobby9000/macd-signal-api), which wraps this toolkit, found that on perfectly flat or linear stretches the histogram is rounding noise of about 10⁻¹⁵ that changes sign, and `crossovers()` reported it as a crossover. Real prices can do this when a thinly traded stock repeats its close. `crossovers()` now treats values within 10⁻⁹ of the largest close as zero, and two regression tests keep both the fix and genuine crossovers after a flat stretch covered.
 
+### How often is too often
+
+A crossover only means something if crossovers are rarer than chance would make them. On a random walk, where there is no trend to find, MACD(12, 26, 9) still crosses its signal about once every 12 periods: 12.3 on average over 40 simulated walks of 3,000 steps, between 10.8 and 14.0 ([`scripts/random_walk_crossings.py`](scripts/random_walk_crossings.py)). On one-minute candles that would be about 117 crossings a day.
+
+The summary panel therefore flags a ticker whose history averages fewer than 12 periods between crossings (`PERIODOS_RUIDO` in `macd_toolkit.py`). The threshold used to be 10, tied to the 9-period signal line, but none of the 40 random walks crossed that often, so it let pure noise through unflagged. Applied to the daily run of 2 October 2026, the median BMV ticker crosses once every 11.8 days, and 22 of the 35 tickers fall under the new threshold, against 7 under the old one. A test keeps the threshold within one period of the simulated average.
+
 ## Example output
 
-[`examples/bmv-daily-2026-10-02/`](examples/bmv-daily-2026-10-02/) holds the summary of a daily run over the 35 tickers with a cut-off of 2 October 2026 (`resumen.md` and `resumen.csv`) and two of the charts. Every chart carries a summary panel with the latest close, MACD, signal, histogram, RSI and the last crossover, plus a technical reading that counts three conditions: MACD above its signal, MACD above zero and a rising histogram. The panel also shows how often the ticker has crossed historically. Crossing more often than once every 10 periods is flagged, because then no single crossover means much.
+[`examples/bmv-daily-2026-10-02/`](examples/bmv-daily-2026-10-02/) holds the summary of a daily run over the 35 tickers with a cut-off of 2 October 2026 (`resumen.md` and `resumen.csv`) and two of the charts. Every chart carries a summary panel with the latest close, MACD, signal, histogram, RSI and the last crossover, plus a technical reading that counts three conditions: MACD above its signal, MACD above zero and a rising histogram. The panel also shows how often the ticker has crossed historically and flags it when that is as often as on a random walk (see [How often is too often](#how-often-is-too-often)). The two charts come from the version of 2 October, which flagged at 10 periods and rounded the interval to whole periods. Under the current threshold WALMEX, at one crossing every 11.8 days, would be flagged as well.
 
 ## Repository structure
 
@@ -79,6 +85,7 @@ The tests of the [MACD signal API](https://github.com/lobby9000/macd-signal-api)
 ├── bmv_tickers.txt              The 35 BMV tickers, one per line
 ├── excel/plantilla_MACD.xlsx    The same calculations as linked Excel formulas (Spanish)
 ├── scripts/excel_crosscheck.py  Recalculates the workbook and compares it with Python
+├── scripts/random_walk_crossings.py  How often MACD crosses on pure noise, the basis of the noise flag
 ├── tests/                       Unit tests and the Excel cross-check
 └── examples/                    Output of a real batch run
 ```

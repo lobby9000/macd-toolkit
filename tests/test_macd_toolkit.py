@@ -259,3 +259,35 @@ def test_resumen_valores_coinciden_con_el_dataframe():
 
 def test_resumen_vacio_si_no_alcanza_la_historia():
     assert mt.resumen_tecnico(mt.macd(random_walk(30))) == {}
+
+
+# ---------------------------------------------------------------------------
+# Umbral de ruido: cada cuantos periodos cruza el MACD cuando no hay nada que
+# encontrar. Ver scripts/random_walk_crossings.py.
+
+def test_umbral_de_ruido_sale_de_una_caminata_aleatoria():
+    """En 40 caminatas aleatorias el MACD(12,26,9) cruza en promedio cada ~12 periodos.
+
+    El umbral del panel tiene que quedar en ese promedio. El anterior, 10, no
+    habria marcado ninguna de las 40 caminatas, aunque todas son puro ruido.
+    """
+    from scripts import random_walk_crossings as rw
+
+    f = rw.random_walk_baseline()
+    assert abs(f.mean() - mt.PERIODOS_RUIDO) < 1.0
+    assert f.min() > 10
+
+
+def _senoide(periodo: int, n: int = 480) -> pd.Series:
+    t = np.arange(n)
+    return pd.Series(100 + 5 * np.sin(2 * np.pi * t / periodo),
+                     index=pd.bdate_range("2024-01-01", periods=n))
+
+
+@pytest.mark.parametrize("periodo, ruidosa", [(16, True), (40, False)])
+def test_resumen_marca_lo_que_cruza_mas_seguido_que_el_umbral(periodo, ruidosa):
+    """Un seno de periodo P cruza su señal dos veces por ciclo, o sea cada P/2."""
+    r = mt.resumen_tecnico(mt.macd(_senoide(periodo)), "día")
+    assert r["periodos_por_cruce"] == pytest.approx(periodo / 2, rel=0.05)
+    assert r["ruidosa"] == ruidosa
+    assert r["ruido_txt"] == f"1 cada {r['periodos_por_cruce']:.1f} días"
