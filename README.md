@@ -2,14 +2,15 @@
 
 [![tests](https://github.com/lobby9000/macd-toolkit/actions/workflows/tests.yml/badge.svg)](https://github.com/lobby9000/macd-toolkit/actions/workflows/tests.yml)
 
-Moving averages, MACD(12, 26, 9) and RSI(14) implemented from first principles in Python, cross-validated against an independent Excel model and run in batch over 35 equities listed on the Mexican Stock Exchange (BMV).
+Moving averages, MACD(12, 26, 9) and RSI(14) implemented from first principles in Python, cross-validated against an independent Excel model and run in batch over 35 equities listed on the Mexican Stock Exchange (BMV). A second tool, `btc_macd.py`, compares what Mexican platforms really charge for bitcoin and replays three ways of buying it with each platform's costs.
 
 ![Daily MACD panel for FEMSA at 2 October 2026](examples/bmv-daily-2026-10-02/FEMSAUBD_MX.png)
 
 ## Highlights
 
 - **Two independent implementations that agree.** The Excel workbook in [`excel/`](excel/plantilla_MACD.xlsx) computes the same indicators with 3,815 linked formulas. A [cross-check script](scripts/excel_crosscheck.py) recalculates it in LibreOffice and matches every quantity to within 5.1 × 10⁻¹³, with the same 9 crossovers flagged on both sides.
-- **Tests that check the mathematics.** 31 unit tests cover properties that can be derived by hand: equality with pandas `ewm(adjust=False)`, a lag of (N − 1)/2 on a linear trend, MACD equal to 7 × slope on a constant trend, the first signal value at t = 34 and the RSI example from class (RS = 3.6 gives 78.26).
+- **Tests that check the mathematics.** 63 unit tests, none of them online, cover properties that can be derived by hand: equality with pandas `ewm(adjust=False)`, a lag of (N − 1)/2 on a linear trend, MACD equal to 7 × slope on a constant trend, the first signal value at t = 34 and the RSI example from class (RS = 3.6 gives 78.26).
+- **What a platform really charges.** `btc_macd.py` reads the live BTC/MXN order books of Bitso and Binance, measures apps without an API such as Mercado Pago from the prices they show, and replays buy and hold, a weekly purchase and PPO crossovers with every platform's costs.
 - **Batch runs over a whole market.** `batch_macd.py` analyses the 35 tickers in [`bmv_tickers.txt`](bmv_tickers.txt) in one pass and writes a chart and CSV files per ticker plus a summary table sorted by the most recent crossover. It also detects tickers whose Yahoo Finance feed is missing the latest sessions and retries them.
 
 ## Quick start
@@ -77,16 +78,42 @@ The summary panel therefore flags a ticker whose history averages fewer than 12 
 
 [`examples/bmv-daily-2026-10-02/`](examples/bmv-daily-2026-10-02/) holds the summary of a daily run over the 35 tickers with a cut-off of 2 October 2026 (`resumen.md` and `resumen.csv`) and two of the charts. Every chart carries a summary panel with the latest close, MACD, signal, histogram, RSI and the last crossover, plus a technical reading that counts three conditions: MACD above its signal, MACD above zero and a rising histogram. The panel also shows how often the ticker has crossed historically and flags it when that is as often as on a random walk (see [How often is too often](#how-often-is-too-often)). The two charts come from the version of 2 October, which flagged at 10 periods and rounded the interval to whole periods. Under the current threshold WALMEX, at one crossing every 11.8 days, would be flagged as well.
 
+## Bitcoin with pesos: what each platform keeps
+
+```bash
+python btc_macd.py cotiza                                          # live books of Bitso and Binance
+python btc_macd.py cotiza --manual "Mercado Pago" 1561000 1498000  # buy and sell prices shown in an app
+python btc_macd.py analiza --semanal 500                           # three years of daily candles from Bitso
+```
+
+- **Quotes.** `cotiza` reads the BTC/MXN order books of Bitso and Binance through their public APIs. Apps without an API, such as Mercado Pago, are measured from the buy and sell prices typed in, against Bitso's mid price at that moment. Every quote is appended to `cotizaciones.csv`, and `analiza` uses the average of what was measured.
+- **Costs.** Commissions and spreads live in [`plataformas.toml`](plataformas.toml), each with its source and the date it was checked. With m the mid price, a the premium of the buy price and b the discount of the sell price, buying A pesos gets A(1 − c<sub>buy</sub>) / (m(1 + a)) bitcoin and selling Q bitcoin returns Q·m(1 − b)(1 − c<sub>sell</sub>) pesos.
+- **Three strategies with the same money.** Buying everything on the first day and holding, buying a fixed amount every seven days, and trading PPO crossovers, each replayed with every platform's costs and with no costs. A crossover seen at a close is traded at the next close, and every value is what you would receive if you sold that day.
+- **Indicators for an asset that never closes.** PPO instead of MACD, because a MACD in pesos means different things at 100 thousand and at 1.5 million pesos per bitcoin; RSI with 80/20 bands; ATR from Bitso's daily highs and lows; drawdown from the peak.
+
+[`examples/btc-2026-10-14/`](examples/btc-2026-10-14/reporte.md) was generated by the [`btc example`](.github/workflows/btc.yml) workflow with three years of Bitso daily candles up to 13 October 2026 and the order books of 14 October:
+
+![Round-trip cost per platform](examples/btc-2026-10-14/costos.png)
+
+- Buying and selling at once cost 0.27% on Binance (live spread 0.073%), 1.20% with a Bitso limit order and 1.59% with a Bitso market order (live spread 0.039%). Mercado Pago keeps at least 2.98% in commissions alone; its spread still has to be measured in the app.
+- Buying 500 pesos every week for three years, Binance would have gathered 0.061688 BTC and Mercado Pago 0.060846 BTC, 1.4% less before its spread.
+- The PPO crossovers asked for 74 trades. Costs took 9.6% of the final value on Binance and 67.3% on Mercado Pago, which turned a 150% cost-free gain into an 18% loss.
+- In this window, holding beat the other two strategies on every platform.
+
+![Final value of each strategy with each platform's costs](examples/btc-2026-10-14/valor_final.png)
+
 ## Repository structure
 
 ```
 ├── macd_toolkit.py              Indicators, resampling, crossovers, charts and the single-ticker CLI
 ├── batch_macd.py                Batch run over a list of tickers with a comparative summary
 ├── bmv_tickers.txt              The 35 BMV tickers, one per line
+├── btc_macd.py                  Bitcoin: live quotes, platform costs, indicators and three strategies
+├── plataformas.toml             Commissions and spreads per platform, with their sources
 ├── excel/plantilla_MACD.xlsx    The same calculations as linked Excel formulas (Spanish)
 ├── scripts/excel_crosscheck.py  Recalculates the workbook and compares it with Python
 ├── scripts/random_walk_crossings.py  How often MACD crosses on pure noise, the basis of the noise flag
-├── tests/                       Unit tests and the Excel cross-check
+├── tests/                       Unit tests, the Excel cross-check and recorded API responses
 └── examples/                    Output of a real batch run
 ```
 
@@ -95,6 +122,7 @@ The summary panel therefore flags a ticker whose history averages fewer than 12 
 - MACD lags price and gives false signals in sideways markets. Its value depends on the price level, so PPO is the fair way to compare tickers.
 - Results change with the EMA seed, with `Close` versus `Adj Close` and with the frequency. All three are explicit options.
 - Prices come from Yahoo Finance through `yfinance`, an unofficial interface that sometimes delivers a ticker without its latest sessions. The batch run flags those tickers rather than mixing stale and current data.
+- Platform costs are configuration. Commissions change and app spreads move during the day, so measure them again before relying on a comparison. The bitcoin simulations use one price series for every platform and today's book spreads for the whole past.
 - This is an academic exercise in technical analysis, not investment advice.
 
 ## Context
