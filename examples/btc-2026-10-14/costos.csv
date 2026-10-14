@@ -1,0 +1,5 @@
+Plataforma,Comisión compra,Comisión venta,Spread,Origen del spread,Compra y venta,Tiempo para recuperarlo,Fuente
+"Binance, orden de mercado",0.10%,0.10%,0.073%,"libro en vivo, 2026-10-14 21:25 UTC",0.27%,0.4 h,"Comisión spot estándar de 0.1% (criptoinforme.com, 5 de octubre de 2026; finantres.mx, 14 de octubre de 2026). Spread: libro BTC/MXN por API."
+"Bitso, orden límite",0.60%,0.60%,0.000%,"fijo en el archivo, 0.00%",1.20%,8.2 h,"bitso.com/mx/fees, comisión maker con menos de 20,000 MXN al mes (consultada el 2026-10-14)."
+"Bitso, orden de mercado",0.78%,0.78%,0.039%,"libro en vivo, 2026-10-14 21:25 UTC",1.59%,14.5 h,"bitso.com/mx/fees, comisión taker con menos de 20,000 MXN al mes (consultada el 2026-10-14). Spread: libro BTC/MXN por API."
+Mercado Pago,1.50%,1.50%,sin medir,sin medir: solo comisiones,2.98%,2.1 días,"Comisión: Luis, en la app de Mercado Pago (octubre de 2026). Spread: por medir en la app."
