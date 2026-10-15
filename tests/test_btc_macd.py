@@ -156,7 +156,7 @@ def test_de_donde_sale_el_spread():
     c = b.costos_de(libro, libros=libros, registro=registro)
     assert c.prima_compra == pytest.approx(0.001) and "en vivo" in c.origen_spread
     c = b.costos_de(libro, libros={}, registro=registro)          # sin conexion: lo guardado
-    assert c.prima_compra == pytest.approx(0.002) and "promedio de 1" in c.origen_spread
+    assert c.prima_compra == pytest.approx(0.002) and c.origen_spread == "libro guardado, 2026-10-14 12:00 UTC"
     c = b.costos_de(libro, libros={}, registro=[])                # sin nada: el tipico
     assert c.spread == pytest.approx(0.0005) and "típico" in c.origen_spread
     c = b.costos_de(app, libros=libros, registro=registro)        # promedio de dos, sin importar acentos
@@ -368,6 +368,74 @@ def test_cotiza_mide_la_app_contra_bitso(tmp_path):
     assert registro["Mercado Pago"].referencia == pytest.approx((1_533_290 + 1_533_910) / 2)
     assert registro["Binance, orden de mercado"].referencia == pytest.approx((1_512_826 + 1_514_472) / 2)
     assert (tmp_path / "cotizacion.png").exists()
+
+
+@pytest.mark.parametrize("texto,valor", [
+    ("1503231.35", 1_503_231.35), ("1,503,231.35", 1_503_231.35),
+    ("1.503.231,35", 1_503_231.35),          # como escribe los precios la app de Mercado Pago
+    ("1503231,35", 1_503_231.35), ("$1.503.231,35", 1_503_231.35), ("1.503.231", 1_503_231.0),
+    ("25,000", 25_000.0), ("25,5", 25.5), ("1561000", 1_561_000.0)])
+def test_precios_como_los_escribe_la_app(texto, valor):
+    assert b.numero(texto) == valor
+
+
+@pytest.mark.parametrize("texto", ["1,5,0", "1.503,231.35", "12,34,567", "abc", "", "5.", ".5"])
+def test_precios_mal_escritos(texto):
+    with pytest.raises(b.ErrorDatos):
+        b.numero(texto)
+
+
+def _velas_de_un_minuto(precios):
+    """Responde /v3/ohlc con velas de un minuto, {minuto UTC: ultimo precio}, dentro de [start, end)."""
+    def obtener(url):
+        assert "time_bucket=60" in url
+        q = dict(par.split("=") for par in url.split("?")[1].split("&"))
+        filas = []
+        for t, p in precios.items():
+            ms = int(pd.Timestamp(t).timestamp() * 1000)
+            if int(q["start"]) <= ms < int(q["end"]):
+                filas.append({"bucket_start_time": ms, "first_rate": str(p), "last_rate": str(p),
+                              "max_rate": str(p), "min_rate": str(p), "volume": "0.001"})
+        return {"success": True, "payload": filas}
+    return obtener
+
+
+def test_precio_de_bitso_en_un_minuto_pasado():
+    obtener = _velas_de_un_minuto({"2026-10-15T04:57Z": 1_504_690, "2026-10-15T04:59Z": 1_504_700,
+                                   "2026-10-15T05:03Z": 1_503_400})
+    assert b.precio_bitso_en(pd.Timestamp("2026-10-15T04:59:40Z"), obtener) == 1_504_700
+    # Un minuto sin operaciones toma la ultima anterior
+    assert b.precio_bitso_en(pd.Timestamp("2026-10-15T04:58:10Z"), obtener) == 1_504_690
+    with pytest.raises(b.ErrorDatos, match="media hora"):
+        b.precio_bitso_en(pd.Timestamp("2026-10-15T04:20Z"), obtener)
+
+
+def test_cotiza_con_momento_anota_una_captura(tmp_path, capsys):
+    obtener = _velas_de_un_minuto({"2026-10-15T04:57Z": 1_504_690})
+    args = b.build_parser().parse_args([
+        "cotiza", "--manual", "Mercado Pago", "1.503.231,35", "1.487.661,56", "--momento", "2026-10-14 22:59",
+        "--out", str(tmp_path), "--cotizaciones", str(tmp_path / "c.csv")])
+    assert b.cmd_cotiza(args, obtener=obtener, ahora=pd.Timestamp("2026-10-15T06:00Z")) == 0
+    [q] = b.leer_cotizaciones(tmp_path / "c.csv")
+    assert (q.compra, q.venta, q.referencia, q.origen) == (1_503_231.35, 1_487_661.56, 1_504_690, "manual")
+    assert q.momento == pd.Timestamp("2026-10-15T04:59Z")       # 22:59 en la Ciudad de Mexico
+    assert not (tmp_path / "cotizacion.png").exists()             # sin libros no hay foto del momento
+    assert "Último precio operado en Bitso el 2026-10-14 a las 22:59" in capsys.readouterr().out
+    plataformas, _ = b.cargar_plataformas(b.RAIZ / "plataformas.toml")
+    mp = next(c for c in b.resolver_costos(plataformas, {}, [q])[0] if c.nombre == "Mercado Pago")
+    assert mp.spread == pytest.approx((1_503_231.35 - 1_487_661.56) / 1_504_690)
+    assert mp.origen_spread == "cotización en la app, 2026-10-15 04:59 UTC"
+
+
+def test_cotiza_con_momento_pide_precios_y_un_minuto_que_ya_paso(tmp_path):
+    base = ["cotiza", "--out", str(tmp_path), "--cotizaciones", str(tmp_path / "c.csv"),
+            "--momento", "2026-10-14 22:59"]
+    with pytest.raises(b.ErrorDatos, match="--manual"):
+        b.cmd_cotiza(b.build_parser().parse_args(base), obtener=None)
+    args = b.build_parser().parse_args(base + ["--manual", "Mercado Pago", "1503231", "1487661"])
+    with pytest.raises(b.ErrorDatos, match="todavía no pasa"):
+        b.cmd_cotiza(args, obtener=None, ahora=pd.Timestamp("2026-10-15T04:00Z"))
+    assert not (tmp_path / "c.csv").exists()
 
 
 def test_cotiza_sin_referencia_termina_con_error(tmp_path, capsys):

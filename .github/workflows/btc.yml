@@ -3,6 +3,12 @@ name: btc example
 # Runs btc_macd.py with today's data (Bitso and Binance order books, Bitso
 # daily candles) and saves the report, charts and CSV files under
 # examples/btc-<date>/. Start it by hand from the Actions tab.
+#
+# The analysis uses the order books that `cotiza` saved in the example's
+# cotizaciones.csv, so an example can be recomputed from its own files.
+# To add prices read in an app (Mercado Pago has no API), fill in `manual`;
+# with `ejemplo` the quote is added to an existing example and only the
+# analysis runs again, with the same candles and the same books.
 
 on:
   workflow_dispatch:
@@ -12,6 +18,12 @@ on:
         default: "500"
       desde:
         description: Start date (YYYY-MM-DD), empty for three years
+        default: ""
+      ejemplo:
+        description: Existing example to recompute, e.g. examples/btc-2026-10-14 (empty for a new one)
+        default: ""
+      manual:
+        description: "Prices read in an app: NAME;BUY;SELL;YYYY-MM-DD HH:MM (Mexico City time), as the app writes them"
         default: ""
       publicar:
         description: Commit to main (otherwise to the btc-ejemplo branch)
@@ -40,17 +52,45 @@ jobs:
         env:
           SEMANAL: ${{ inputs.semanal }}
           DESDE: ${{ inputs.desde }}
+          EJEMPLO: ${{ inputs.ejemplo }}
+          MANUAL: ${{ inputs.manual }}
         run: |
-          fecha=$(TZ=America/Mexico_City date +%F)
-          out="examples/btc-$fecha"
-          mkdir -p "$out"
-          python btc_macd.py cotiza --out "$out" --cotizaciones "$out/cotizaciones.csv"
+          set -euo pipefail
+          hasta=""
+          if [ -n "$EJEMPLO" ]; then
+            out="${EJEMPLO%/}"
+            if [ ! -f "$out/serie.csv" ] || [ ! -f "$out/cotizaciones.csv" ]; then
+              echo "::error::$out has no serie.csv or cotizaciones.csv"
+              exit 1
+            fi
+            # Same candles as before: the dates come from the example's own series
+            DESDE=$(sed -n 2p "$out/serie.csv" | cut -d, -f1)
+            hasta=$(tail -n 1 "$out/serie.csv" | cut -d, -f1)
+            fecha="${out##*btc-}"
+            mensaje="Recompute the bitcoin example of $fecha with prices read in an app"
+          else
+            fecha=$(TZ=America/Mexico_City date +%F)
+            out="examples/btc-$fecha"
+            mkdir -p "$out"
+            python btc_macd.py cotiza --out "$out" --cotizaciones "$out/cotizaciones.csv"
+            mensaje="Bitcoin example with data from $fecha"
+          fi
+          if [ -n "$MANUAL" ]; then
+            IFS=';' read -r nombre compra venta momento <<< "$MANUAL"
+            if [ -z "${momento:-}" ]; then
+              echo "::error::manual needs four fields: NAME;BUY;SELL;YYYY-MM-DD HH:MM"
+              exit 1
+            fi
+            python btc_macd.py cotiza --manual "$nombre" "$compra" "$venta" --momento "$momento" \
+              --out "$out" --cotizaciones "$out/cotizaciones.csv"
+          fi
           extra=()
           if [ -n "$DESDE" ]; then extra+=(--desde "$DESDE"); fi
-          python btc_macd.py analiza --semanal "$SEMANAL" "${extra[@]}" --out "$out" \
+          if [ -n "$hasta" ]; then extra+=(--hasta "$hasta"); fi
+          python btc_macd.py analiza --sin-red --semanal "$SEMANAL" "${extra[@]}" --out "$out" \
             --cotizaciones "$out/cotizaciones.csv"
           echo "OUT=$out" >> "$GITHUB_ENV"
-          echo "FECHA=$fecha" >> "$GITHUB_ENV"
+          echo "MENSAJE=$mensaje" >> "$GITHUB_ENV"
       - name: Save the result
         env:
           PUBLICAR: ${{ inputs.publicar }}
@@ -58,7 +98,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add "$OUT"
-          git commit -m "Bitcoin example with data from $FECHA"
+          git commit -m "$MENSAJE"
           if [ "$PUBLICAR" = "true" ]; then
             git push origin HEAD:main
           else

@@ -7,12 +7,15 @@ habria pasado con tres maneras de hacerlo.
 
     python btc_macd.py cotiza
     python btc_macd.py cotiza --manual "Mercado Pago" 1561000 1498000
+    python btc_macd.py cotiza --manual "Mercado Pago" 1.503.231,35 1.487.661,56 --momento "2026-10-14 22:59"
     python btc_macd.py analiza --semanal 500
     python btc_macd.py analiza --desde 2018-01-01 --vela 1d --out resultados_btc
 
 ``cotiza`` lee en vivo el libro de ordenes BTC/MXN de las plataformas con API
 publica (Bitso y Binance) y mide contra el precio medio de Bitso los precios de
-compra y venta que anotas de las apps sin API, como Mercado Pago. Cada
+compra y venta que anotas de las apps sin API, como Mercado Pago. Con
+``--momento`` anotas precios que viste antes, por ejemplo en una captura de
+pantalla: se miden contra el ultimo precio operado en Bitso en ese minuto. Cada
 cotizacion se guarda en cotizaciones.csv y ``analiza`` usa el promedio de lo
 medido.
 
@@ -121,6 +124,42 @@ def clave(nombre: str) -> str:
     s = unicodedata.normalize("NFKD", str(nombre))
     s = "".join(c for c in s if not unicodedata.combining(c))
     return " ".join(s.lower().split())
+
+
+def numero(texto: str) -> float:
+    """
+    Un precio escrito como lo muestra una app: 1503231.35, 1,503,231.35, o como
+    Mercado Pago, 1.503.231,35 o 1503231,35. Con punto y coma, el ultimo es el
+    decimal. Con uno solo, si separa grupos de tres digitos son miles (25,000 o
+    25.000) y si no es el decimal (25,5).
+    """
+    s = "".join(str(texto).replace("$", "").split()).replace("_", "")
+    signo = ""
+    if s.startswith("-"):
+        signo, s = "-", s[1:]
+    if not s or not s[0].isdigit() or any(c not in "0123456789.," for c in s):
+        raise ErrorDatos(f"{texto!r} no es un número")
+    decimal = ""
+    if "." in s and "," in s:
+        decimal = "." if s.rfind(".") > s.rfind(",") else ","
+    elif "." in s or "," in s:
+        signo_sep = "." if "." in s else ","
+        trozos = s.split(signo_sep)
+        if len(trozos) == 2 and len(trozos[1]) != 3:
+            decimal = signo_sep
+    entera, fraccion = s, ""
+    if decimal:
+        entera, fraccion = s[:s.rfind(decimal)], s[s.rfind(decimal) + 1:]
+        if not fraccion.isdigit():
+            raise ErrorDatos(f"{texto!r} no es un número")
+    if "." in entera or "," in entera:
+        miles = "." if "." in entera else ","
+        grupos = entera.split(miles)
+        if (any(not g.isdigit() for g in grupos) or not 1 <= len(grupos[0]) <= 3
+                or any(len(g) != 3 for g in grupos[1:])):
+            raise ErrorDatos(f"{texto!r} no es un número: los miles van en grupos de tres")
+        entera = "".join(grupos)
+    return float(signo + entera + ("." + fraccion if fraccion else ""))
 
 
 @dataclass(frozen=True)
@@ -331,6 +370,30 @@ def medio(libro: Libro) -> float:
     return (libro[0] + libro[1]) / 2.0
 
 
+def precio_bitso_en(momento: pd.Timestamp, obtener: Callable = obtener_json) -> float:
+    """
+    Ultimo precio operado en el libro BTC/MXN de Bitso al terminar el minuto de
+    ``momento`` (UTC), de sus velas de un minuto. Es la referencia de una
+    cotizacion anotada despues, como la de una captura de pantalla, porque el
+    libro de ese momento ya no se puede leer. El spread de Bitso ronda 0.04%, asi
+    que este precio y el precio medio difieren en centesimas de punto.
+    """
+    minuto = pd.Timestamp(momento).tz_convert("UTC").floor("min")
+    ms = lambda t: int(t.timestamp() * 1000)  # noqa: E731
+    inicio, fin = minuto - pd.Timedelta(minutes=30), minuto + pd.Timedelta(minutes=1)
+    d = obtener(f"{BITSO}/ohlc?book=btc_mxn&time_bucket=60&start={ms(inicio)}&end={ms(fin)}")
+    if not isinstance(d, dict) or d.get("success") is False or "payload" not in d:
+        raise ErrorDatos(f"Bitso no regresó velas de un minuto: {str(d)[:200]}")
+    try:
+        velas = sorted((int(r["bucket_start_time"]), float(r["last_rate"])) for r in d["payload"])
+    except (KeyError, TypeError, ValueError):
+        raise ErrorDatos(f"Bitso: velas de un minuto sin precio: {str(d['payload'])[:200]}") from None
+    velas = [v for v in velas if v[0] <= ms(minuto)]
+    if not velas:
+        raise ErrorDatos(f"Bitso no tiene operaciones en la media hora antes de {minuto:%Y-%m-%d %H:%M} UTC")
+    return velas[-1][1]
+
+
 _COLUMNAS_REGISTRO = ["momento_utc", "plataforma", "compra", "venta", "referencia", "origen"]
 
 
@@ -385,10 +448,14 @@ def costos_de(p: Plataforma, *, libros: dict[str, Libro], registro: list[Cotizac
     if medidas:
         a = float(np.mean([c.prima_compra for c in medidas]))
         b = float(np.mean([c.descuento_venta for c in medidas]))
-        d1, d2 = min(c.momento for c in medidas), max(c.momento for c in medidas)
-        rango = f"{d1:%Y-%m-%d}" if d1.date() == d2.date() else f"{d1:%Y-%m-%d} a {d2:%Y-%m-%d}"
-        return Costos(**base, prima_compra=a, descuento_venta=b,
-                      origen_spread=f"promedio de {len(medidas)} cotizaci{'ones' if len(medidas) != 1 else 'ón'}, {rango}")
+        if len(medidas) == 1:
+            q = medidas[0]
+            origen = f"{'libro guardado' if q.origen == 'api' else 'cotización en la app'}, {q.momento:%Y-%m-%d %H:%M} UTC"
+        else:
+            d1, d2 = min(c.momento for c in medidas), max(c.momento for c in medidas)
+            rango = f"{d1:%Y-%m-%d}" if d1.date() == d2.date() else f"{d1:%Y-%m-%d} a {d2:%Y-%m-%d}"
+            origen = f"promedio de {len(medidas)} cotizaciones, {rango}"
+        return Costos(**base, prima_compra=a, descuento_venta=b, origen_spread=origen)
     if p.spread == "libro" and p.spread_tipico is not None:
         return Costos(**base, prima_compra=p.spread_tipico / 2, descuento_venta=p.spread_tipico / 2,
                       origen_spread=f"típico del archivo, {100 * p.spread_tipico:.2f}% (sin conexión)")
@@ -1125,8 +1192,9 @@ def escribir_reporte(ruta: str | Path, *, d: pd.DataFrame, tabla: pd.DataFrame, 
 # 9. Comandos
 # ---------------------------------------------------------------------------
 
-def _imprimir_cotizaciones(costos: list[Costos], monto: float, referencia: float) -> None:
-    print(f"\nPrecio medio de referencia: {referencia:,.2f} MXN por BTC")
+def _imprimir_cotizaciones(costos: list[Costos], monto: float, referencia: float,
+                           etiqueta: str = "Precio medio de referencia") -> None:
+    print(f"\n{etiqueta}: {referencia:,.2f} MXN por BTC")
     print(f"{'Plataforma':28} {'Compra y venta':>15} {'Spread':>9}   BTC por {_pesos(monto):>9}   "
           f"Te regresan al vender al instante")
     for c in sorted(costos, key=lambda c: c.ida_vuelta):
@@ -1136,13 +1204,54 @@ def _imprimir_cotizaciones(costos: list[Costos], monto: float, referencia: float
         print(f"{c.nombre:28} {_pct(c.ida_vuelta):>15} {spread:>9}   {btc:>15.8f}   ${regreso:,.2f}")
 
 
-def cmd_cotiza(args: argparse.Namespace, obtener: Callable = obtener_json) -> int:
+def _momento_local(texto: str) -> pd.Timestamp:
+    """AAAA-MM-DD HH:MM en hora de la Ciudad de Mexico (o con zona explicita), en UTC."""
+    try:
+        t = pd.Timestamp(texto)
+    except (TypeError, ValueError):
+        raise ErrorDatos(f"--momento {texto!r}: escribe AAAA-MM-DD HH:MM, hora de la Ciudad de México") from None
+    return (t.tz_localize(ZONA) if t.tzinfo is None else t).tz_convert("UTC")
+
+
+def cmd_cotiza(args: argparse.Namespace, obtener: Callable = obtener_json,
+               ahora: pd.Timestamp | None = None) -> int:
     plataformas, ref = cargar_plataformas(args.plataformas)
     api_ref = ref.get("api", "bitso")
+    manuales = [(nombre, numero(compra), numero(venta)) for nombre, compra, venta in args.manual or []]
+    conocidas = {clave(p.nombre) for p in plataformas}
+    avisos = [f"{nombre} no está en {Path(args.plataformas).name}: se guarda la cotización, pero "
+              "agrega la plataforma con sus comisiones para compararla."
+              for nombre, _, _ in manuales if clave(nombre) not in conocidas]
+    registro = Path(args.cotizaciones)
+
+    if args.momento:
+        # Precios que viste antes (una captura de pantalla): el libro de ese momento ya no se puede
+        # leer, asi que la referencia es el ultimo precio de Bitso en ese minuto y no se leen libros.
+        if not manuales:
+            raise ErrorDatos("--momento sirve para precios anotados con --manual")
+        if api_ref != "bitso":
+            raise ErrorDatos("--momento usa las velas de un minuto de Bitso: pon [referencia] api = \"bitso\"")
+        momento = _momento_local(args.momento)
+        if momento > (pd.Timestamp.now(tz="UTC") if ahora is None else ahora):
+            raise ErrorDatos(f"--momento {args.momento}: ese minuto todavía no pasa")
+        referencia = precio_bitso_en(momento, obtener)
+        guardar_cotizaciones([Cotizacion(n, c, v, referencia, momento, "manual") for n, c, v in manuales],
+                             registro)
+        costos, avisos2 = resolver_costos(plataformas, {}, leer_cotizaciones(registro))
+        local = momento.tz_convert(ZONA)
+        _imprimir_cotizaciones(costos, args.monto, referencia,
+                               f"Último precio operado en Bitso el {local:%Y-%m-%d} a las {local:%H:%M} "
+                               "(Ciudad de México)")
+        for a in avisos + avisos2:
+            print(f"  aviso: {a}")
+        print(f"\nCotizaciones guardadas en {registro}.")
+        return 0
+
     apis = {p.api for p in plataformas if p.spread == "libro" and p.api} | {api_ref}
-    libros, avisos = leer_libros(apis, obtener) if not args.sin_red else ({}, [])
+    libros, avisos_red = leer_libros(apis, obtener) if not args.sin_red else ({}, [])
+    avisos += avisos_red
     if api_ref not in libros:
-        print(f"Sin precio de referencia ({api_ref}): {'; '.join(avisos) or 'modo sin red'}", file=sys.stderr)
+        print(f"Sin precio de referencia ({api_ref}): {'; '.join(avisos_red) or 'modo sin red'}", file=sys.stderr)
         return 1
     referencia = medio(libros[api_ref])
     momento = libros[api_ref][2]
@@ -1152,14 +1261,8 @@ def cmd_cotiza(args: argparse.Namespace, obtener: Callable = obtener_json) -> in
             # Una plataforma con API se mide dentro de su propio libro; una app, contra la referencia.
             bid, ask, t = libros[p.api]
             nuevas.append(Cotizacion(p.nombre, ask, bid, (bid + ask) / 2, t, "api"))
-    conocidas = {clave(p.nombre) for p in plataformas}
-    for nombre, compra, venta in args.manual or []:
-        if clave(nombre) not in conocidas:
-            avisos.append(f"{nombre} no está en {Path(args.plataformas).name}: se guarda la cotización, pero "
-                          "agrega la plataforma con sus comisiones para compararla.")
-        nuevas.append(Cotizacion(nombre, float(compra), float(venta), referencia,
-                                 pd.Timestamp.now(tz="UTC"), "manual"))
-    registro = Path(args.cotizaciones)
+    for nombre, compra, venta in manuales:
+        nuevas.append(Cotizacion(nombre, compra, venta, referencia, pd.Timestamp.now(tz="UTC"), "manual"))
     guardar_cotizaciones(nuevas, registro)
     # Esta corrida manda: las plataformas con libro usan el libro de ahora; las demas, todo lo anotado.
     historial = leer_cotizaciones(registro)
@@ -1251,7 +1354,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     c = sub.add_parser("cotiza", parents=[comun], help="precios de compra y venta ahora mismo")
     c.add_argument("--manual", nargs=3, action="append", metavar=("NOMBRE", "COMPRA", "VENTA"),
-                   help='precios que ves en una app, p. ej. --manual "Mercado Pago" 1561000 1498000')
+                   help='precios que ves en una app, p. ej. --manual "Mercado Pago" 1561000 1498000; '
+                        'también como los escribe la app, 1.503.231,35')
+    c.add_argument("--momento", metavar="\"AAAA-MM-DD HH:MM\"",
+                   help="cuándo viste esos precios, hora de la Ciudad de México (de una captura, por ejemplo); "
+                        "se miden contra el último precio de Bitso en ese minuto y no se leen libros")
     c.add_argument("--monto", type=float, default=10_000, help="pesos para el ejemplo (default: 10000)")
     c.add_argument("--out", default="resultados_btc", help="carpeta de la gráfica (default: resultados_btc)")
 

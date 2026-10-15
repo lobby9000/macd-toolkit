@@ -6,6 +6,7 @@
 #            un número       -> fijo, en %
 #            "libro"         -> se lee en vivo del libro de órdenes por API (api = "bitso" o "binance")
 #            "por_medir"     -> lo mides tú con  python btc_macd.py cotiza --manual "Nombre" COMPRA VENTA
+#                               (con --momento "AAAA-MM-DD HH:MM" si los precios son de una captura)
 #                               y se usa el promedio de lo anotado en cotizaciones.csv
 # spread_tipico : % que se usa para "libro" cuando no hay conexión.
 # omitir_sin_medicion : true para dejar fuera la plataforma mientras su spread no esté medido.
@@ -23,7 +24,7 @@ nombre = "Mercado Pago"
 comision_compra = 1.5
 comision_venta = 1.5
 spread = "por_medir"
-fuente = "Comisión: Luis, en la app de Mercado Pago (octubre de 2026). Spread: por medir en la app."
+fuente = "Comisión: Luis, en la app de Mercado Pago (octubre de 2026). Spread: precios de compra y venta anotados de la app con cotiza --manual."
 nota = "No tiene API pública: el spread sale de las cotizaciones que anotes."
 
 [[plataforma]]
