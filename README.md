@@ -11,7 +11,7 @@ Moving averages, MACD(12, 26, 9) and RSI(14) implemented from first principles i
 ## Highlights
 
 - **Two independent implementations that agree.** The Excel workbook in [`excel/`](excel/plantilla_MACD.xlsx) computes the same indicators with 3,815 linked formulas. A [cross-check script](scripts/excel_crosscheck.py) recalculates it in LibreOffice and matches every quantity to within 5.1 × 10⁻¹³, with the same 9 crossovers flagged on both sides.
-- **Tests that check the mathematics.** 63 unit tests, none of them online, cover properties that can be derived by hand: equality with pandas `ewm(adjust=False)`, a lag of (N − 1)/2 on a linear trend, MACD equal to 7 × slope on a constant trend, the first signal value at t = 34 and the RSI example from class (RS = 3.6 gives 78.26).
+- **Tests that check the mathematics.** 82 unit tests, none of them online, cover properties that can be derived by hand: equality with pandas `ewm(adjust=False)`, a lag of (N − 1)/2 on a linear trend, MACD equal to 7 × slope on a constant trend, the first signal value at t = 34 and the RSI example from class (RS = 3.6 gives 78.26).
 - **What a platform really charges.** `btc_macd.py` reads the live BTC/MXN order books of Bitso and Binance, measures apps without an API such as Mercado Pago from the prices they show, and replays buy and hold, a weekly purchase and PPO crossovers with every platform's costs.
 - **Batch runs over a whole market.** `batch_macd.py` analyses the 35 tickers in [`bmv_tickers.txt`](bmv_tickers.txt) in one pass and writes a chart and CSV files per ticker plus a summary table sorted by the most recent crossover. It also detects tickers whose Yahoo Finance feed is missing the latest sessions and retries them.
 
