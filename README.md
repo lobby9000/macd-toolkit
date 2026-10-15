@@ -4,6 +4,8 @@
 
 Moving averages, MACD(12, 26, 9) and RSI(14) implemented from first principles in Python, cross-validated against an independent Excel model and run in batch over 35 equities listed on the Mexican Stock Exchange (BMV). A second tool, `btc_macd.py`, compares what Mexican platforms really charge for bitcoin and replays three ways of buying it with each platform's costs.
 
+**Try it in your browser:** the [`btc` demo](https://lobby9000.github.io/professional.html?app=terminal&run=btc) on my site replays the cost comparison and the three strategies of the recorded example, and checks the result against this repository's `estrategias.csv` to the cent. Type `macd` there for the indicators.
+
 ![Daily MACD panel for FEMSA at 2 October 2026](examples/bmv-daily-2026-10-02/FEMSAUBD_MX.png)
 
 ## Highlights
